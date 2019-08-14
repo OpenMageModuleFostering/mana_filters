@@ -72,4 +72,27 @@ class Mana_Filters_Model_Solr_Adapter_PhpExtension extends Enterprise_Search_Mod
 
         return $result;
     }
+
+    protected function _prepareFacetConditions($facetFields) {
+        $result = parent::_prepareFacetConditions($facetFields);
+        if (isset($result['facet']) && $result['facet'] == 'on' &&
+            ($limit = Mage::getStoreConfig('mana_filters/general/solr_limit')) &&
+            is_numeric($limit))
+        {
+            $result['facet.limit'] = (int)$limit;
+        }
+        return $result;
+    }
+    function _prepareSortFields($sortBy) {
+        $unsetCurrentCategory = false;
+        if (!Mage::registry('current_category')) {
+            $unsetCurrentCategory = true;
+            Mage::register('current_category', Mage::helper('mana_core')->getRootCategory());
+        }
+        $result = parent::_prepareSortFields($sortBy);
+        if ($unsetCurrentCategory) {
+            Mage::unregister('current_category');
+        }
+        return $result;
+    }
 }

@@ -46,6 +46,11 @@ examples on what kind of actions can be applied to referenced blocks.
                 <name>m_wait</name>
                 <template>mana/core/wait.phtml</template>
             </action>
+            <action method="addSingletonBlock">
+                <type>core/template</type>
+                <name>m_popup</name>
+                <template>mana/core/popup.phtml</template>
+            </action>
         </reference>
     </jquery_core>
 	<jquery_basic_effects>
@@ -61,4 +66,10 @@ examples on what kind of actions can be applied to referenced blocks.
             <action method="addJs" ifconfig="mana_dev/debug/jquery_min"><script>jquery/jquery-ui.min.js</script></action>
         </reference>
 	</jquery_ui>
+	<jstree>
+        <reference name="head">
+			<action method="addCss"><stylesheet>lib/jstree/style.css</stylesheet></action>
+            <action method="addItem"><type>skin_js</type><name>lib/jstree/jstree.js</name><params/></action>
+        </reference>
+	</jstree>
 </layout>

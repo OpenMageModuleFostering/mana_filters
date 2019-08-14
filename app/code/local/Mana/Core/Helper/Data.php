@@ -12,6 +12,15 @@
  */
 class Mana_Core_Helper_Data extends Mage_Core_Helper_Abstract {
     protected $_pageTypes;
+    /**
+     * @var Mage_Catalog_Model_Category
+     */
+    protected $_rootCategory;
+
+    /**
+     * @var Mage_Core_Model_Store
+     */
+    protected $_actualCurrentStore;
 
     /**
      * Retrieve config value for store by path. By default uses standard Magento function to query core_config_data
@@ -347,19 +356,34 @@ class Mana_Core_Helper_Data extends Mage_Core_Helper_Abstract {
         }
         return $val;
     }
-    public function jsonForceObjectAndEncode($data) {
-        return json_encode($this->_forceObjectRecursively($data));
+    public function jsonForceObjectAndEncode($data, $options = array()) {
+        return json_encode($this->_forceObjectRecursively($data, $options));
     }
-    protected function _forceObjectRecursively($data) {
+    protected function _forceObjectRecursively($data, $options = array()) {
+        $forceObject = false;
+        if (isset($options['force_object'])) {
+            $forceObject = $options['force_object'];
+            unset($options['force_object']);
+        }
         if (is_array($data)) {
+            $convert = false;
             foreach ($data as $key => $value) {
-                $data[$key] = $this->_forceObjectRecursively($value);
+                if (!is_numeric($key)) {
+                    $convert = true;
+                }
+                $data[$key] = $this->_forceObjectRecursively($value,
+                    $forceObject !== false && isset($forceObject[$key])
+                        ? array_merge(array('force_object' => $forceObject[$key]), $options)
+                        : $options);
             }
-            return (object)$data;
+            return $forceObject === true || $convert ? (object)$data : $data;
         }
         elseif(is_object($data)) {
             foreach ($data as $key => $value) {
-                $data->$key = $this->_forceObjectRecursively($value);
+                $data->$key = $this->_forceObjectRecursively($value,
+                    $forceObject !== false && isset($forceObject[$key])
+                        ? array_merge(array('force_object' => $forceObject[$key]), $options)
+                        : $options);
             }
             return $data;
         }
@@ -405,12 +429,15 @@ class Mana_Core_Helper_Data extends Mage_Core_Helper_Abstract {
             return $request->getRouteName() . '/' . $request->getControllerName() . '/' . $request->getActionName();
         }
     }
+
     public function getRouteParams() {
         $request = Mage::app()->getRequest();
 
         $result = '';
         foreach ($request->getUserParams() as $key => $value) {
-            $result .= '/'.$key.'/'.$value;
+            if (!is_object($value)) {
+                $result .= '/' . $key . '/' . $value;
+            }
         }
         return $result;
     }
@@ -530,6 +557,17 @@ class Mana_Core_Helper_Data extends Mage_Core_Helper_Abstract {
         }
     }
 
+    public function setProtectedProperty($object, $propertyName, $value) {
+        $className = get_class($object);
+        $class = new ReflectionClass($className);
+        $property = $class->getProperty($propertyName);
+        if (method_exists($property, 'setAccessible')) {
+            $property->setAccessible(true);
+            $property->setValue($object, $value);
+        }
+    }
+
+
     public function base64EncodeUrl($url) {
         return base64_encode(Mage::getSingleton('core/url')->sessionUrlVar($url));
     }
@@ -635,10 +673,10 @@ class Mana_Core_Helper_Data extends Mage_Core_Helper_Abstract {
         return $this->_attributes[$key];
     }
 
-    public function getAttributeTable($attribute) {
+    public function getAttributeTable($attribute, $baseTable = 'catalog_category_entity') {
         return $attribute['backend_table'] ?
             $attribute['backend_table'] :
-            'catalog_category_entity_' . $attribute['backend_type'];
+            Mage::getSingleton('core/resource')->getTableName($baseTable . '_' . $attribute['backend_type']);
     }
 
     /**
@@ -705,16 +743,45 @@ class Mana_Core_Helper_Data extends Mage_Core_Helper_Abstract {
         return $pageTypes[$type];
     }
 
+    /**
+     * @param string $helper
+     * @return Mana_Core_Helper_PageType|null
+     */
+    public function getPageTypeByRoutePath($routePath = null, $helper = 'helper') {
+        foreach ($this->getPageTypes($helper) as $pageType) {
+            if ($pageType->getRoutePath() == $this->getRoutePath($routePath)) {
+                return $pageType;
+            }
+        }
+        return null;
+    }
+
     public function isManadevLayeredNavigationInstalled() {
         return $this->isModuleEnabled('Mana_Filters');
+    }
+
+    public function isManadevPaidLayeredNavigationInstalled() {
+        return $this->isModuleEnabled('ManaPro_FilterAdmin');
+    }
+
+    public function isManadevLayeredNavigationCheckboxesInstalled() {
+        return $this->isModuleEnabled('ManaPro_FilterCheckboxes');
     }
 
     public function isManadevSeoLayeredNavigationInstalled() {
         return $this->isModuleEnabled('ManaPro_FilterSeoLinks');
     }
 
+    public function isManadevSeoInstalled() {
+        return $this->isModuleEnabled('Mana_Seo');
+    }
+
     public function isManadevAttributePageInstalled() {
         return $this->isModuleEnabled('Mana_AttributePage');
+    }
+
+    public function isManadevSortingInstalled() {
+        return $this->isModuleEnabled('Mana_Sorting');
     }
 
     public function isManadevLayeredNavigationTreeInstalled() {
@@ -726,8 +793,29 @@ class Mana_Core_Helper_Data extends Mage_Core_Helper_Abstract {
         return $this->isModuleEnabled('ManaPro_FilterColors');
     }
 
+    public function isManadevDependentFilterInstalled()
+    {
+        return $this->isModuleEnabled('ManaPro_FilterDependent');
+    }
+
     public function isEnterpriseUrlRewriteInstalled() {
         return $this->isModuleEnabled('Enterprise_UrlRewrite');
+    }
+
+    public function isSpecialPagesInstalled() {
+        return $this->isModuleEnabled('Mana_Page');
+    }
+
+    public function isManadevCMSProInstalled() {
+        return $this->isModuleEnabled('ManaPro_Content');
+    }
+
+    public function isManadevCMSInstalled() {
+        return $this->isModuleEnabled('Mana_Content');
+    }
+
+    public function isManadevManySKUInstalled() {
+        return $this->isModuleEnabled('ManaPro_ProductFaces');
     }
 
     protected $_accentTranslations = array(
@@ -808,5 +896,75 @@ class Mana_Core_Helper_Data extends Mage_Core_Helper_Abstract {
         $html = $transportObject->getHtml();
 
         return $html;
+    }
+    public function getOptionArray($allOptions)
+    {
+        $_options = array();
+        foreach ($allOptions as $option) {
+            $_options[$option['value']] = $option['label'];
+        }
+        return $_options;
+    }
+
+    /**
+     * @return string[]
+     */
+    public function getProductToolbarParameters() {
+        $result = array();
+        $request = Mage::app()->getRequest();
+        foreach (array('p', 'mode', 'order', 'dir', 'limit') as $key) {
+            if ($value = $request->getParam($key)) {
+                $result[$key] = $value;
+            }
+        }
+        return $result;
+    }
+
+    public function initLayoutMessages($messagesStorage) {
+        if (!is_array($messagesStorage)) {
+            $messagesStorage = array($messagesStorage);
+        }
+        $layout = Mage::getSingleton('core/layout');
+        foreach ($messagesStorage as $storageName) {
+            $storage = Mage::getSingleton($storageName);
+            if ($storage) {
+                $block = $layout->getMessagesBlock();
+                $block->addMessages($storage->getMessages(true));
+                $block->setEscapeMessageFlag($storage->getEscapeMessages(true));
+                $block->addStorageType($storageName);
+            } else {
+                Mage::throwException(
+                    Mage::helper('core')->__('Invalid messages storage "%s" for layout messages initialization', (string)$storageName)
+                );
+            }
+        }
+
+        return $this;
+    }
+
+    public function getRootCategory() {
+        if (!$this->_rootCategory) {
+            $this->_rootCategory = Mage::getModel('catalog/category');
+            $this->_rootCategory
+                ->setStoreId(Mage::app()->getStore()->getId())
+                ->load(Mage::app()->getStore()->getRootCategoryId());
+
+        }
+        return $this->_rootCategory;
+    }
+
+    public function setCurrentStore($store) {
+        if (!$this->_actualCurrentStore) {
+            $this->_actualCurrentStore = Mage::app()->getStore();
+        }
+
+        Mage::app()->setCurrentStore(Mage::app()->getStore($store));
+    }
+
+    public function restoreCurrentStore() {
+        if ($this->_actualCurrentStore) {
+            Mage::app()->setCurrentStore($this->_actualCurrentStore);
+            $this->_actualCurrentStore = null;
+        }
     }
 }

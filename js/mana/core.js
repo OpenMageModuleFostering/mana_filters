@@ -7,14 +7,16 @@
 
 ; // make JS merging easier
 
+
+
 var Mana = Mana || {};
 
-(function($, undefined) {
+(function($, $p, undefined) {
 
 
     $.extend(Mana, {
         _singletons: {},
-        _defines: { jquery: $ },
+        _defines: { jquery: $, prototype: $p },
 
         /**
          * Defines JavaScript class/module
@@ -50,6 +52,9 @@ var Mana = Mana || {};
             return result;
         },
         _resolveDefine: function(name) {
+            if (Mana._defines[name] === undefined) {
+                console.warn("'" + name + "' is not defined");
+            }
             return Mana._defines[name];
         },
 
@@ -136,15 +141,18 @@ var Mana = Mana || {};
         }
 
     });
-})(jQuery);
+})(jQuery, $);
+
+
 
 /* Simple JavaScript Inheritance
  * By John Resig http://ejohn.org/
  * MIT Licensed.
  */
 // Inspired by base2 and Prototype
+var m_object_initializing = false;
 (function (undefined) {
-    var initializing = false, fnTest = /xyz/.test(function () { xyz;}) ? /\b_super\b/ : /.*/;
+    var fnTest = /xyz/.test(function () { xyz;}) ? /\b_super\b/ : /.*/;
 
     // The base Class implementation (does nothing)
     Mana.Object = function () {
@@ -160,9 +168,9 @@ var Mana = Mana || {};
 
         // Instantiate a base class (but only create the instance,
         // don't run the init constructor)
-        initializing = true;
+        m_object_initializing = true;
         var prototype = new this();
-        initializing = false;
+        m_object_initializing = false;
 
         // Copy the properties over onto the new prototype
         for (var name in prop) {
@@ -194,11 +202,11 @@ var Mana = Mana || {};
         var Object;
         if (className === undefined) {
             // All construction is actually done in the init method
-            Object = function Object() { if (!initializing && this._init) this._init.apply(this, arguments); };
+            Object = function Object() { if (!m_object_initializing && this._init) this._init.apply(this, arguments); };
         }
         else {
             // give constructor a meaningful name for easier debugging
-            eval("Object = function " + className.replace(/\//g, '_') + "() { if (!initializing && this._init) this._init.apply(this, arguments); };");
+            eval("Object = function " + className.replace(/\//g, '_') + "() { if (!m_object_initializing && this._init) this._init.apply(this, arguments); };");
         }
 
         // Populate our constructed prototype object
@@ -214,10 +222,11 @@ var Mana = Mana || {};
     };
 })();
 
+
 Mana.define('Mana/Core', ['jquery'], function ($) {
     return Mana.Object.extend('Mana/Core', {
-        getClasses: function(element) {
-            return element.className.split(/\s+/);
+        getClasses: function(element) { 
+            return element.className && element.className.split ? element.className.split(/\s+/) : [];
         },
         getPrefixedClass: function(element, prefix) {
             var result = '';
@@ -262,11 +271,13 @@ Mana.define('Mana/Core', ['jquery'], function ($) {
         }
     });
 });
+
+
 Mana.define('Mana/Core/Config', ['jquery'], function ($) {
     return Mana.Object.extend('Mana/Core/Config', {
         _init: function () {
             this._data = {
-                debug: true,
+                debug: false,
                 showOverlay: true,
                 showWait: true
             };
@@ -281,9 +292,17 @@ Mana.define('Mana/Core/Config', ['jquery'], function ($) {
         set: function (data) {
             $.extend(this._data, data);
             return this;
-        }
+        },
+        getBaseUrl: function (url) {
+            return url.indexOf(this.getData('url.base')) == 0
+                ? this.getData('url.base')
+                : this.getData('url.secureBase');
+        },
+
     });
 });
+
+
 Mana.define('Mana/Core/Json', ['jquery', 'singleton:Mana/Core'], function ($, core) {
     return Mana.Object.extend('Mana/Core/Json', {
         parse: function (what) {
@@ -308,6 +327,8 @@ Mana.define('Mana/Core/Json', ['jquery', 'singleton:Mana/Core'], function ($, co
         }
     });
 });
+
+
 Mana.define('Mana/Core/Utf8', [], function () {
     return Mana.Object.extend('Mana/Core/Utf8', {
         decode: function (str_data) {
@@ -355,6 +376,8 @@ Mana.define('Mana/Core/Utf8', [], function () {
         }
     });
 });
+
+
 Mana.define('Mana/Core/Base64', ['singleton:Mana/Core/Utf8'], function (utf8) {
     return Mana.Object.extend('Mana/Core/Base64', {
         encode: function (what) {
@@ -481,6 +504,8 @@ Mana.define('Mana/Core/Base64', ['singleton:Mana/Core/Utf8'], function (utf8) {
         }
     });
 });
+
+
 Mana.define('Mana/Core/UrlTemplate', ['singleton:Mana/Core/Base64', 'singleton:Mana/Core/Config'], function (base64, config) {
     return Mana.Object.extend('Mana/Core/UrlTemplate', {
         decodeAttribute: function (data) {
@@ -490,9 +515,39 @@ Mana.define('Mana/Core/UrlTemplate', ['singleton:Mana/Core/Base64', 'singleton:M
             else {
                 return base64.decode(data.replace(/-/g, '+').replace(/_/g, '/').replace(/,/g, '='));
             }
+        },
+        encodeAttribute: function(data) {
+            return base64.encode(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, ',');
         }
     });
 });
+
+
+Mana.define('Mana/Core/StringTemplate', ['jquery'], function ($, undefined) {
+    return Mana.Object.extend('Mana/Core/StringTemplate', {
+        concat: function(parsedTemplate, vars) {
+            var result = '';
+            $.each(parsedTemplate, function(i, token) {
+                var type = token[0];
+                var text = token[1];
+                if (type == 'string') {
+                    result += text;
+                }
+                else if (type == 'var') {
+                    if (vars[text] !== undefined) {
+                        result += vars[text];
+                    }
+                    else {
+                        result += '{{' + text + '}}';
+                    }
+                }
+            });
+            return result;
+        }
+    });
+});
+
+
 Mana.define('Mana/Core/Layout', ['jquery', 'singleton:Mana/Core'], function ($, core, undefined) {
     return Mana.Object.extend('Mana/Core/Layout', {
         _init: function () {
@@ -503,6 +558,10 @@ Mana.define('Mana/Core/Layout', ['jquery', 'singleton:Mana/Core'], function ($, 
         },
         getBlock: function (blockName) {
             return this._getBlockRecursively(this.getPageBlock(), blockName);
+        },
+        getBlockForElement: function(el) {
+            var blockInfo = this._getElementBlockInfo(el);
+            return blockInfo ? this.getBlock(blockInfo.id) : null;
         },
         _getBlockRecursively: function (block, blockName) {
             if (block.getId() == blockName) {
@@ -633,13 +692,25 @@ Mana.define('Mana/Core/Layout', ['jquery', 'singleton:Mana/Core'], function ($, 
                         exists = true;
                         delete namedBlocks[blockInfo.id];
                     }
-                    else if (type) {
+                    else {
+                        if (type) {
+                            block = new type();
+                        }
+                        else {
+                            console.error("Block '" + blockInfo.typeName + "' is not defined");
+                        }
+                    }
+                    if (block) {
+                        block.setId(blockInfo.id);
+                    }
+                }
+                else  {
+                    if (type) {
                         block = new type();
                     }
-                    block.setId(blockInfo.id);
-                }
-                else if (type) {
-                    block = new type();
+                    else {
+                        console.error("Block '" + blockInfo.typeName + "' is not defined");
+                    }
                 }
                 if (block) {
                     block.setElement(element);
@@ -656,9 +727,49 @@ Mana.define('Mana/Core/Layout', ['jquery', 'singleton:Mana/Core'], function ($, 
                 return null;
             }
         },
-        showPopup: function (options) {
-            var self = this;
+        preparePopup: function(options) {
+            options = this._preparePopupOptions(options);
+            if (options.$popup === undefined) {
+                var $popup = $('#m-popup');
+                $popup.css({"width": "auto", "height": "auto"});
+                if (core.isString(options.content)) {
+                    $popup.html(options.content);
+                }
+                else {
+                    $popup.html($(options.content).html());
+                }
 
+                if (options.popup['class']) {
+                    $popup.addClass(options.popup['class']);
+                }
+
+                options.$popup = $popup;
+            }
+            return options.$popup;
+        },
+        _preparePopupOptions: function(options) {
+            if (options.overlay === undefined) { options.overlay = {}; }
+            if (options.overlay.opacity === undefined) { options.overlay.opacity = 0.2; }
+
+            if (options.popup === undefined) { options.popup = {}; }
+            if (options.popup.blockName === undefined) { options.popup.blockName = 'Mana/Core/PopupBlock'; }
+
+            if (options.popupBlock === undefined) { options.popupBlock = {}; }
+
+            if (options.fadein === undefined) { options.fadein = {}; }
+            if (options.fadein.overlayTime === undefined) { options.fadein.overlayTime = 0; }
+            if (options.fadein.popupTime === undefined) { options.fadein.popupTime = 300; }
+
+            if (options.fadeout === undefined) { options.fadeout = {}; }
+            if (options.fadeout.overlayTime === undefined) { options.fadeout.overlayTime = 0; }
+            if (options.fadeout.popupTime === undefined) { options.fadeout.popupTime = 500; }
+
+            return options;
+        },
+        showPopup: function (options) {
+            options = this._preparePopupOptions(options);
+
+            var self = this;
             Mana.requireOptional([options.popup.blockName], function (PopupBlockClass) {
                 var fadeoutCallback = options.fadeout.callback;
                 options.fadeout.callback = function () {
@@ -669,20 +780,17 @@ Mana.define('Mana/Core/Layout', ['jquery', 'singleton:Mana/Core'], function ($, 
                     });
                 };
                 var overlay = self.getPageBlock().showOverlay('m-popup-overlay', options.fadeout);
-                var $popup = $('#m-popup');
+                var $popup = self.preparePopup(options);
                 overlay.animate({ opacity: options.overlay.opacity }, options.fadein.overlayTime, function () {
-                    $popup
-                        .css({"width": "auto", "height": "auto"})
-                        .html(options.content);
-
-                    if (options.popup['class']) {
-                        $popup.addClass(options.popup['class']);
-                    }
                     $popup.show();
 
                     var popupBlock = new PopupBlockClass();
                     popupBlock.setElement($popup[0]);
-                    popupBlock.prepare(options.popupBlock);
+                    var vars = self.beginGeneratingBlocks(popupBlock);
+                    self.endGeneratingBlocks(vars);
+                    if (popupBlock.prepare) {
+                        popupBlock.prepare(options.popupBlock);
+                    }
 
                     $('.m-popup-overlay').on('click', function () {
                         self.hidePopup();
@@ -739,6 +847,8 @@ Mana.define('Mana/Core/Layout', ['jquery', 'singleton:Mana/Core'], function ($, 
         }
     });
 });
+
+
 Mana.define('Mana/Core/Ajax', ['jquery', 'singleton:Mana/Core/Layout', 'singleton:Mana/Core/Json',
     'singleton:Mana/Core', 'singleton:Mana/Core/Config'],
 function ($, layout, json, core, config, undefined)
@@ -751,10 +861,45 @@ function ($, layout, json, core, config, undefined)
             this._oldSetLocation = undefined;
             this._preventClicks = 0;
         },
+        _encodeUrl: function(url, options) {
+            if (options.encode) {
+                if (options.encode.offset !== undefined) {
+                    if (options.encode.length === undefined) {
+                        if (options.encode.offset === 0) {
+                            return window.encodeURI(url.substr(options.encode.offset));
+                        }
+                        else {
+                            return url.substr(0, options.encode.offset) +
+                                window.encodeURI(url.substr(options.encode.offset));
+                        }
+                    }
+                    else if (options.encode.length === 0) {
+                        return url;
+                    }
+                    else {
+                        if (options.encode.offset === 0) {
+                            return window.encodeURI(url.substr(options.encode.offset, options.encode.length))
+                                + url.substr(options.encode.offset + options.encode.length);
+                        }
+                        else {
+                            return url.substr(0, options.encode.offset) +
+                                window.encodeURI(url.substr(options.encode.offset, options.encode.length)) +
+                                url.substr(options.encode.offset + options.encode.length);
+                        }
+                    }
+                }
+                else {
+                    return url;
+                }
+            }
+            else {
+                return window.encodeURI(url);
+            }
+        },
         get:function (url, callback, options) {
-            var self = this;
+            var self = this, encodedUrl;
             options = this._before(options, url);
-            $.get(window.encodeURI(url))
+            $.get(this._encodeUrl(url, options))
                 .done(function (response) { self._done(response, callback, options, url); })
                 .fail(function (error) { self._fail(error, options, url)})
                 .complete(function () { self._complete(options, url); });
@@ -779,6 +924,9 @@ function ($, layout, json, core, config, undefined)
                     $(selector).html(html);
                 });
             }
+            if (response.config) {
+                config.set(response.config);
+            }
             if (response.blocks) {
                 $.each(response.blocks, function (blockName, sectionIndex) {
                     var block = layout.getBlock(blockName);
@@ -787,14 +935,11 @@ function ($, layout, json, core, config, undefined)
                     }
                 });
             }
-            if (response.config) {
-                config.set(response.config);
-            }
             if (response.script) {
                 $.globalEval(response.script);
             }
             if (response.title) {
-                document.title = response.title;
+                document.title = response.title.replace(/&amp;/g, '&');
             }
         },
         getSectionSeparator: function() {
@@ -882,7 +1027,8 @@ function ($, layout, json, core, config, undefined)
             if (options.showWait) {
                 page.hideWait();
             }
-            if (options.showDebugMessages) {
+            // When the request fails (let's say no internet), the status is `0` and no responseText. So, do not alert.
+            if (options.showDebugMessages && error.status > 0) {
                 alert(error.status + (error.responseText ? ': ' + error.responseText : ''));
             }
         },
@@ -951,6 +1097,7 @@ function ($, layout, json, core, config, undefined)
         _internalCallInterceptionCallback: function(url, element) {
             var interceptor = this._findMatchingInterceptor(url, element);
             if (interceptor) {
+                this.lastUrl = url;
                 interceptor.intercept(url, element);
                 return false; // prevent default link click behavior
             }
@@ -989,10 +1136,22 @@ function ($, layout, json, core, config, undefined)
                 this._matchedInterceptorCache[url] = interceptor;
             }
             return this._matchedInterceptorCache[url];
+        },
+        getDocumentUrl: function() {
+            if (this.lastUrl) {
+                return this.lastUrl;
+            }
+            else {
+                return document.URL;
+            }
         }
     });
 });
-Mana.define('Mana/Core/Block', ['jquery', 'singleton:Mana/Core', 'singleton:Mana/Core/Layout'], function($, core, layout, undefined) {
+
+
+Mana.define('Mana/Core/Block', ['jquery', 'singleton:Mana/Core', 'singleton:Mana/Core/Layout',
+    'singleton:Mana/Core/Json'],
+function($, core, layout, json, undefined) {
     return Mana.Object.extend('Mana/Core/Block', {
         _init: function() {
             this._id = '';
@@ -1007,6 +1166,7 @@ Mana.define('Mana/Core/Block', ['jquery', 'singleton:Mana/Core', 'singleton:Mana
             this._subscribeToHtmlEvents()._subscribeToBlockEvents();
         },
         _subscribeToHtmlEvents: function() {
+            this._json = {};
             return this;
         },
         _subscribeToBlockEvents:function () {
@@ -1205,9 +1365,33 @@ Mana.define('Mana/Core/Block', ['jquery', 'singleton:Mana/Core', 'singleton:Mana
                 this._text[key] = this.$().data(key + '-text');
             }
             return this._text[key];
+        },
+        getJsonData: function(attributeName, fieldName) {
+            if (this._json[attributeName] === undefined) {
+                this._json[attributeName] = json.decodeAttribute(this.$().data(attributeName));
+            }
+            return fieldName === undefined ? this._json[attributeName] : this._json[attributeName][fieldName];
         }
     });
 });
+
+
+Mana.define('Mana/Core/PopupBlock', ['jquery', 'Mana/Core/Block', 'singleton:Mana/Core/Layout'], function ($, Block, layout) {
+    return Block.extend('Mana/Core/PopupBlock', {
+        prepare: function(options) {
+            var self = this;
+            this._host = options.host;
+
+            this.$().find('.btn-close').on('click', function() { return self._close(); });
+        },
+        _close: function() {
+            layout.hidePopup();
+            return false;
+        }
+    });
+});
+
+
 Mana.define('Mana/Core/PageBlock', ['jquery', 'Mana/Core/Block', 'singleton:Mana/Core/Config'],
 function ($, Block, config)
 {
@@ -1233,9 +1417,11 @@ function ($, Block, config)
             return this
                 ._super()
                 .on('bind', this, function() {
+                    $(window).on('load', _raiseResize);
                     $(window).on('resize', _raiseResize);
                 })
                 .on('unbind', this, function() {
+                    $(window).off('load', _raiseResize);
                     $(window).off('resize', _raiseResize);
                 });
 
@@ -1287,6 +1473,8 @@ function ($, Block, config)
         }
     });
 });
+
+
 Mana.require(['jquery', 'singleton:Mana/Core/Layout', 'singleton:Mana/Core/Ajax'], function($, layout, ajax) {
     function _generateBlocks() {
         var vars = layout.beginGeneratingBlocks();
@@ -1296,9 +1484,34 @@ Mana.require(['jquery', 'singleton:Mana/Core/Layout', 'singleton:Mana/Core/Ajax'
         _generateBlocks();
         ajax.startIntercepting();
     });
-    //$(document).bind('m-ajax-after', _generateBlocks);
-
 });
+
+
+Mana.require(['jquery'], function($) {
+    var bp = {
+        xsmall: 479,
+        small: 599,
+        medium: 770,
+        large: 979,
+        xlarge: 1199
+    };
+    Mana.rwdIsMobile = false;
+    $(function() {
+        if (window.enquire && window.enquire.register) {
+            enquire.register('screen and (max-width: ' + bp.medium + 'px)', {
+                match: function () {
+                    Mana.rwdIsMobile = true;
+                    $(document).trigger('m-rwd-mobile');
+                },
+                unmatch: function () {
+                    Mana.rwdIsMobile = false;
+                    $(document).trigger('m-rwd-wide');
+                }
+            });
+        }
+    });
+});
+
 
 //region (Obsolete) additional jQuery functions used in MANAdev extensions
 (function($) {
@@ -1405,12 +1618,13 @@ Mana.require(['jquery', 'singleton:Mana/Core/Layout', 'singleton:Mana/Core/Ajax'
 	}
 
 	$.fn.mMarkAttr = function (attr, condition) {
-		if (condition) {
-			this.attr(attr, attr);
-		}
-		else {
-			this.removeAttr(attr);
-		}
+	    this.prop(attr, condition);
+		//if (condition) {
+		//	this.attr(attr, attr);
+		//}
+		//else {
+		//	this.removeAttr(attr);
+		//}
 		return this;
 	}; 
 	// the following function is executed when DOM ir ready. If not use this wrapper, code inside could fail if
@@ -1544,7 +1758,7 @@ Mana.require(['jquery', 'singleton:Mana/Core/Layout', 'singleton:Mana/Core/Ajax'
                 popup: { contentSelector:'.' + name + '-text', containerClass:'m-' + name + '-popup-container', top:100 }
 
             }, options);
-            $(this).live('click', function() {
+            $(document).on('click', this, function () {
                 if ($.mPopupClosing()) {
                     return false;
                 }
@@ -1633,4 +1847,6 @@ Mana.require(['jquery', 'singleton:Mana/Core/Layout', 'singleton:Mana/Core/Ajax'
     };
 
 })(jQuery);
-//endregion/
+//endregion
+
+//# sourceMappingURL=core.js.map

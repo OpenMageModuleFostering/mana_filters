@@ -58,6 +58,12 @@ class Mana_Filters_Resource_Filter2 extends Mana_Db_Resource_Object {
     const DM_URL_POSITION = 36;
 
     const DM_DISABLE_NO_RESULT_OPTIONS = 37;
+    const DM_MIN_MAX_SLIDER_ROLE = 38;
+    const DM_COLOR_STATE_DISPLAY = 39;
+    const DM_MIN_SLIDER_CODE = 40;
+
+    const DM_SHOW_OPTION_SEARCH = 41;
+    const DM_INCLUDE_IN_CANONICAL_URL = 42;
 
     #endregion
 
@@ -276,10 +282,11 @@ class Mana_Filters_Resource_Filter2 extends Mana_Db_Resource_Object {
 			->joinLeft(array('eav_attribute_additional' => Mage::getSingleton('core/resource')->getTableName('catalog/eav_attribute')), 
 				'eav_attribute.attribute_id = eav_attribute_additional.attribute_id', null)
 			->joinLeft(array('eav_entity_type' => Mage::getSingleton('core/resource')->getTableName('eav/entity_type')),
-				"eav_entity_type.entity_type_id = eav_attribute.entity_type_id AND eav_entity_type.entity_type_code = 'catalog_product'", null)
+				"eav_entity_type.entity_type_id = eav_attribute.entity_type_id", null)
 			->distinct()
 			->where('(eav_attribute.attribute_id IS NULL) OR (eav_attribute_additional.is_filterable = 0)')
-			->where("target.code <> 'category'");
+			->where("target.code <> 'category'")
+            ->where("eav_entity_type.entity_type_code = 'catalog_product'");
 		$target->setSelect('main', $select);
 	}
 	/**
@@ -333,5 +340,32 @@ class Mana_Filters_Resource_Filter2 extends Mana_Db_Resource_Object {
         $object->unsValueData();
         $object->setHadValueData(true);
         return parent::_afterSave($object);
+    }
+
+    /**
+     * @param Mana_Filters_Model_Filter2 $filter
+     * @return bool|int
+     */
+    public function getAttributeId($filter) {
+        $db = $this->_getReadAdapter();
+
+        if ($filter->getType() != 'category') {
+            return $db->fetchOne($db->select()
+                ->from(array('a' => $this->getTable('eav/attribute')), 'attribute_id')
+                ->joinInner(
+                    array('t' => $this->getTable('eav/entity_type')),
+                    "`t`.`entity_type_id` = `a`.`entity_type_id` AND `t`.`entity_type_code` = 'catalog_product'",
+                    null
+                )
+                ->joinInner(
+                    array('ca' => $this->getTable('catalog/eav_attribute')),
+                    "`ca`.`attribute_id` = `a`.`attribute_id`",
+                    null
+                )
+                ->where('a.attribute_code = ?', $filter->getCode()));
+        }
+        else {
+            return false;
+        }
     }
 }

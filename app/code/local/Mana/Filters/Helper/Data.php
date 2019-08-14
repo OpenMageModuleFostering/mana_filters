@@ -53,36 +53,49 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
 	        $request->getModuleName() == 'manapro_filterajax' && $request->getControllerName() == 'search' && $request->getActionName() == 'index')
 	    {
             if (!$this->_filterSearchOptionsCollection) {
+                Mana_Core_Profiler2::start(__METHOD__ . "::search");
                 $this->_filterSearchOptionsCollection = Mage::getResourceModel('mana_filters/filter2_store_collection')
                         ->addColumnToSelect('*')
                         ->addStoreFilter(Mage::app()->getStore())
                         ->setOrder('position', 'ASC');
+                Mage::dispatchEvent('m_before_load_filter_collection', array('collection' => $this->_filterSearchOptionsCollection));
+                if (Mana_Core_Profiler2::enabled()) {
+                    $this->_filterSearchOptionsCollection->load();
+                    Mana_Core_Profiler2::stop();
+                }
             }
-            Mage::dispatchEvent('m_before_load_filter_collection', array('collection' => $this->_filterSearchOptionsCollection));
             return $this->_filterSearchOptionsCollection;
         }
-		if ($allCategories) {
-			if (!$this->_filterAllOptionsCollection) {
-				$this->_filterAllOptionsCollection = Mage::getResourceModel('mana_filters/filter2_store_collection')
+		elseif ($allCategories) {
+            if (!$this->_filterAllOptionsCollection) {
+                Mana_Core_Profiler2::start(__METHOD__ . "::all");
+                $this->_filterAllOptionsCollection = Mage::getResourceModel('mana_filters/filter2_store_collection')
 		        	->addColumnToSelect('*')
 		        	->addStoreFilter(Mage::app()->getStore())
 		        	->setOrder('position', 'ASC');
-			}
-			Mage::dispatchEvent('m_before_load_filter_collection', array('collection' => $this->_filterAllOptionsCollection));
+                Mage::dispatchEvent('m_before_load_filter_collection', array('collection' => $this->_filterAllOptionsCollection));
+                if (Mana_Core_Profiler2::enabled()) {
+                    $this->_filterAllOptionsCollection->load();
+                    Mana_Core_Profiler2::stop();
+                }
+            }
 			return $this->_filterAllOptionsCollection;
 		}
 		else {
 			if (!$this->_filterOptionsCollection) {
-				Mana_Core_Profiler::start('mln' . '::' . __CLASS__ . '::' . __METHOD__ . '::' . '$productCollection->getSetIds()');
+			    Mana_Core_Profiler2::start(__METHOD__ . "::category");
 				$setIds = Mage::getSingleton('catalog/layer')->getProductCollection()->getSetIds();
-				Mana_Core_Profiler::stop('mln' . '::' . __CLASS__ . '::' . __METHOD__ . '::' . '$productCollection->getSetIds()');
 				$this->_filterOptionsCollection = Mage::getResourceModel('mana_filters/filter2_store_collection')
 		        	->addFieldToSelect('*')
 		        	->addCodeFilter($this->_getAttributeCodes($setIds))
                     ->addStoreFilter(Mage::app()->getStore())
 		        	->setOrder('position', 'ASC');
-			}
-            Mage::dispatchEvent('m_before_load_filter_collection', array('collection' => $this->_filterOptionsCollection));
+                Mage::dispatchEvent('m_before_load_filter_collection', array('collection' => $this->_filterOptionsCollection));
+                if (Mana_Core_Profiler2::enabled()) {
+                    $this->_filterOptionsCollection->load();
+                    Mana_Core_Profiler2::stop();
+                }
+            }
             return $this->_filterOptionsCollection;
 		}
 	}
@@ -116,9 +129,12 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
 		return $url;
 	}
     public function getClearUrl($markUrl = true, $clearListParams = false, $nosid = false, $clearAllParams = false) {
-        $filterState = array();
+        $filterState = array('p' => null);
         foreach ($this->getLayer()->getState()->getFilters() as $item) {
             $filterState[$item->getFilter()->getRequestVar()] = $item->getFilter()->getCleanValue();
+        }
+        if ($this->coreHelper()->isSpecialPagesInstalled()) {
+            $filterState[$this->specialPageHelper()->getRequestVar()] = null;
         }
         if ($clearListParams) {
             $filterState = array_merge($filterState, array(
@@ -202,7 +218,8 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
                 throw new Exception('Not implemented');
         }
     }
-    public function canShowFilterInBlock($block, $filter) {
+
+    protected function _canShowFilterInBlock($block, $filter) {
         if ($block->getData('show_'.$filter->getCode())) {
             return true;
         }
@@ -220,12 +237,67 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
             if (!is_array($showIn)) {
                 $showIn = explode(',', $showIn);
             }
-            return in_array($showInFilter, $showIn);
+            if (in_array($showInFilter, $showIn)) {
+                return true;
+            }
+            return false;
         }
         else {
             return true;
         }
     }
+
+    protected function _findBlockForPosition($position) {
+        $layout = Mage::getSingleton('core/layout');
+        foreach (array("mana.catalog.{$position}nav", "mana.catalogsearch.{$position}nav") as $blockName) {
+            if ($block = $layout->getBlock($blockName)) {
+                return $block;
+            }
+        }
+
+        return false;
+    }
+
+    protected function _isMobileOnlyFilter($block, $filter) {
+        if (!($showInFilter = $block->getShowInFilter())) {
+            return false;
+        }
+
+        if ($showInFilter != 'above_products') {
+            return false;
+        }
+
+        if (!in_array(Mage::getStoreConfig('mana_filters/mobile/column_filters'), array('copy', 'move'))) {
+            return false;
+        }
+
+        $showIn = $filter->getShowIn();
+        if (!is_array($showIn)) {
+            $showIn = explode(',', $showIn);
+        }
+
+        foreach (array('left', 'right') as $position) {
+            if ($block = $this->_findBlockForPosition($position)) {
+                if ($this->_canShowFilterInBlock($block, $filter)) {
+                    return true;
+                }
+                elseif (in_array($position, $showIn)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public function canShowFilterInBlock($block, $filter) {
+        return $this->_canShowFilterInBlock($block, $filter) || $this->_isMobileOnlyFilter($block, $filter);
+    }
+
+    public function isMobileFilter($block, $filter) {
+        return !$this->_canShowFilterInBlock($block, $filter) && $this->_isMobileOnlyFilter($block, $filter);
+    }
+
     public function getFilterLayoutName($block, $filter) {
         if ($showInFilter = $block->getShowInFilter()) {
             return 'm_' . $showInFilter . '_' . $filter->getCode() . '_filter';
@@ -235,7 +307,14 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
         }
     }
 
+    /**
+     * @param Mage_Catalog_Model_Resource_Eav_Mysql4_Product_Collection $productCollection
+     * @param $categoryCollection
+     * @param bool $inCurrentCategory
+     * @return $this
+     */
     public function addCountToCategories($productCollection, $categoryCollection, $inCurrentCategory = false) {
+        Mana_Core_Profiler2::start(__METHOD__);
         $isAnchor = array();
         $isNotAnchor = array();
         foreach ($categoryCollection as $category) {
@@ -253,7 +332,7 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
             if ($inCurrentCategory) {
                 $from = $select->getPart(Varien_Db_Select::FROM);
                 if (isset($from['cat_index'])) {
-                    $categoryId = $this->getLayer()->getCurrentCategory()->getId();
+                    $categoryId = is_int($inCurrentCategory) ? $inCurrentCategory : $this->getLayer()->getCurrentCategory()->getId();
                     $from['cat_index']['joinCondition'] = preg_replace(
                         "/(.*)(`?)cat_index(`?).(`?)category_id(`?)='(\\d+)'(.*)/",
                         "$1$2cat_index$3.$4category_id$5='{$categoryId}'$7",
@@ -272,6 +351,7 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
                 $anchorStmt = clone $select;
                 $anchorStmt->limit(); //reset limits
                 $anchorStmt->where('count_table.category_id IN (?)', $isAnchor);
+                $sql = $anchorStmt->__toString();
                 $productCounts += $productCollection->getConnection()->fetchPairs($anchorStmt);
                 $anchorStmt = null;
             }
@@ -294,6 +374,8 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
             }
             $category->setProductCount($_count);
         }
+
+        Mana_Core_Profiler2::stop();
 
         return $this;
     }
@@ -392,13 +474,48 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
             foreach ($filterCollection as $filter) {
                 /* @var $filter Mana_Filters_Model_Filter2_Store */
                 if ($filter->getType() == 'category') {
-                    if ($filter->getData('display') == 'tree') {
+                    if ($filter->getData('display') == 'tree' || $filter->getData('display') == 'subtree') {
                         return true;
                     }
                 }
             }
        }
        return false;
+    }
+
+    public function getPageContent() {
+        return array(
+            'filters' => $this->getActiveFilters(),
+            'page' => Mage::app()->getRequest()->getParam('p'),
+        );
+    }
+
+    public function getSpecialOptionData($code) {
+        if ($this->coreHelper()->isSpecialPagesInstalled()) {
+            $data = $this->specialPageHelper()->getOptionData($code);
+            usort($data, array(Mage::getSingleton('mana_filters/sort'), 'byPosition'));
+            return $data;
+        }
+        else {
+            return array();
+        }
+    }
+
+    public function getListItemClass($item) {
+        $result = '';
+        if ($item->getMShowSelected()) {
+            $result .= 'm-selected-ln-item';
+        }
+        if (!($item->getCount() || $item->getMSelected())) {
+            if ($result) {
+                $result .= ' ';
+            }
+            $result .= 'm-disabled';
+        }
+        if ($result) {
+            $result = "class=\"$result\"";
+        }
+        return $result;
     }
 
     #region Dependencies
@@ -408,6 +525,13 @@ class Mana_Filters_Helper_Data extends Mana_Core_Helper_Layer {
      */
     public function coreHelper() {
         return Mage::helper('mana_core');
+    }
+
+    /**
+     * @return Mana_Page_Helper_Special
+     */
+    public function specialPageHelper() {
+        return Mage::helper('mana_page/special');
     }
     #endregion
 }
