@@ -1,16 +1,19 @@
 {
-    "name": "OpenMageModuleFostering/Mana_Filters",
+    "name": "OpenMageModuleFostering\/Mana_Filters",
     "type": "magento-module",
     "license": "Open-Software-License-(OSL-3.0)",
     "homepage": "",
     "description": "Advanced layered navigation",
     "authors": [
-    {
-        "name": "Mana Team",
-        "email": "team@manadev.com"
-    }
-],
+        {
+            "name": "Mana Team",
+            "email": "team@manadev.com"
+        }
+    ],
     "suggest": {
-        "magento-hackathon/magento-composer-installer": "*"
-    }
+        "magento-hackathon\/magento-composer-installer": "*"
+    },
+    "keywords": [
+        "openmage-module"
+    ]
 }
