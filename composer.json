@@ -1,7 +1,7 @@
 {
-    "name": "OpenMageModuleFostering\/Mana_Filters",
+    "name": "openmage-module-fostering\/mana_filters",
     "type": "magento-module",
-    "license": "Open-Software-License-(OSL-3.0)",
+    "license": "OSL-3.0",
     "homepage": "",
     "description": "Advanced layered navigation",
     "authors": [
